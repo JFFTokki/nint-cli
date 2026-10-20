@@ -1,0 +1,13 @@
+node_modules/
+data/
+output/
+dist/
+.env
+.env.*
+!.env.example
+nint.config*.json
+!nint.config.example.json
+*.local.json
+*.log
+*.tgz
+.DS_Store
