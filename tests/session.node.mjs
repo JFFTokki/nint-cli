@@ -58,6 +58,56 @@ test('UI快照绑定DOM节点：过期引用、重绘、敏感输入、iframe、
  }finally{await browser?.context.close().catch(()=>{});await rm(temp,{recursive:true,force:true});}
 });
 
+test('读取已加载表格并滚动表格内部容器，保留合并单元格和截断标记',{timeout:20000},async()=>{
+ const temp=await mkdtemp(path.join(tmpdir(),'nint-tables-test-'));const options=config(temp);let browser;
+ try{
+  browser=await fixtureBrowser(options);const ui=new UiController(browser);
+  await browser.page.setContent(`<div id="table-scroll" style="height:80px;overflow:auto"><table id="data"><thead><tr><th rowspan="2">项目</th><th colspan="2">分组</th></tr><tr><th>数量</th><th>数值</th></tr></thead><tbody>${Array.from({length:30},(_,i)=>`<tr><td>项目${i+1}</td><td>${i}</td><td>${i*10}</td></tr>`).join('')}</tbody></table></div><table style="display:none"><tr><td>隐藏表格</td></tr></table>`);
+  const first=await ui.execute('tables',{limit:4},options);
+  assert.equal(first.coverage,'loaded_dom_tables_only');
+  const table=first.frames[0].tables[0];
+  assert.equal(first.frames[0].tables.length,1);assert.equal(table.rowCount,32);assert.equal(table.rows.length,4);assert.equal(table.truncated,true);
+  assert.equal(table.rows[0].cells[0].rowSpan,2);assert.equal(table.rows[0].cells[1].colSpan,2);
+  await byId(ui,'scroll','table-scroll',{y:400},options);
+  assert.ok(await browser.page.locator('#table-scroll').evaluate(el=>el.scrollTop)>0);
+  const all=await ui.execute('tables',{limit:100},options);
+  assert.equal(all.frames[0].tables[0].truncated,false);
+  assert.equal(all.frames[0].tables[0].rows.at(-1).cells[0].text,'项目30');
+ }finally{await browser?.context.close().catch(()=>{});await rm(temp,{recursive:true,force:true});}
+});
+
+test('慢速文件响应使用下载超时，不被点击后的导航等待提前终止',{timeout:20000},async()=>{
+ const temp=await mkdtemp(path.join(tmpdir(),'nint-slow-download-test-'));const options=config(temp);let browser;
+ try{
+  browser=await fixtureBrowser(options);const ui=new UiController(browser);
+  await browser.page.route('https://art.nint.com/slow-download',async route=>{
+   await new Promise(resolve=>setTimeout(resolve,1400));
+   await route.fulfill({contentType:'text/csv',headers:{'Content-Disposition':'attachment; filename="slow.csv"'},body:'a,b\n3,4'});
+  });
+  await browser.page.locator('#download').evaluate(el=>{el.removeAttribute('download');el.href='https://art.nint.com/slow-download';});
+  const result=await byId(ui,'download','download',{}, {...options,actionTimeout:600,downloadTimeout:5000});
+  assert.equal(await readFile(result.filename,'utf8'),'a,b\n3,4');
+  assert.equal(result.verification,'browser_download_only');
+ }finally{await browser?.context.close().catch(()=>{});await rm(temp,{recursive:true,force:true});}
+});
+
+test('导出跳转到平台错误页时立即失败并释放等待监听器',{timeout:20000},async()=>{
+ const temp=await mkdtemp(path.join(tmpdir(),'nint-download-error-test-'));const options=config(temp);let browser;
+ try{
+  browser=await fixtureBrowser(options);const ui=new UiController(browser);
+  for(const status of [200,503]){
+   await browser.page.goto('https://art.nint.com/fixture');
+   await browser.page.route(`https://art.nint.com/export-error-${status}`,route=>route.fulfill({status,contentType:'text/html',body:'server1 error'}));
+   await browser.page.locator('#download').evaluate((el,status)=>{el.removeAttribute('download');el.href=`https://art.nint.com/export-error-${status}`;},status);
+   const before=browser.page.listenerCount('download');
+   const started=Date.now();
+   await assert.rejects(byId(ui,'download','download',{}, {...options,downloadTimeout:10000}),error=>error.code==='download_page_error');
+   assert.ok(Date.now()-started<5000,'错误页不应耗尽下载等待时间');
+   assert.equal(browser.page.listenerCount('download'),before);
+  }
+ }finally{await browser?.context.close().catch(()=>{});await rm(temp,{recursive:true,force:true});}
+});
+
 test('本地服务：认证、串行操作、跨 CLI 进程、盘点、取消与停止',{timeout:60000},async()=>{
  const temp=await mkdtemp(path.join(tmpdir(),'nint-service-test-'));const options=config(temp);let service;
  try{

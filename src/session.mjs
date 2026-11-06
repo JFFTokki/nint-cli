@@ -23,7 +23,7 @@ async function requestBody(request){
   for await(const chunk of request){size+=chunk.length;if(size>1024*1024)throw new Error('请求过大');chunks.push(chunk);}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
-const optionKeys=['output','dataDir','startUrl','actionTimeout','downloadTimeout'];
+const optionKeys=['output','dataDir','startUrl','actionTimeout','downloadTimeout','browserExecutable'];
 export const sessionOptions=options=>Object.fromEntries(optionKeys.filter(key=>options[key]!==undefined).map(key=>[key,options[key]]));
 
 /** The server owns one dedicated browser and serializes every operation against it. */

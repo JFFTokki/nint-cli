@@ -39,7 +39,12 @@ function collectFrame({ snapshotId, offset, limit }) {
       if (el.shadowRoot) roots.push(el.shadowRoot);
       const labelledControl=el.matches('input[type="checkbox"],input[type="radio"]')&&[...(el.labels??[])].some(visible);
       if (!visible(el) && el.type !== 'file' && !labelledControl) continue;
-      const native = el.matches(selector);
+      const table = el.matches('table,[role="grid"]');
+      const overflow = !table && el.matches('div,section') &&
+        ((el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(el).overflowY)) ||
+         (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX))) &&
+        Boolean(el.querySelector('table,[role="grid"]'));
+      const native = el.matches(selector) || table || overflow;
       const pointer = !native && getComputedStyle(el).cursor === 'pointer' && !el.parentElement?.closest(selector) && text(el.innerText).length > 0;
       if (!native && !pointer) continue;
       const explicit = el.getAttribute('aria-label');
@@ -50,6 +55,7 @@ function collectFrame({ snapshotId, offset, limit }) {
       const sensitive = type === 'password' || /password|passwd|token|secret|otp|验证码|账号|用户名|邮箱|手机|账户|登录/i.test(name + el.id + el.getAttribute('name'));
       const fingerprint = () => JSON.stringify([el.tagName, el.id, el.getAttribute('name'), el.getAttribute('role'), el.getAttribute('type'), el.getAttribute('href'), text(el.getAttribute('aria-label')), text(el.innerText).slice(0,300),el.labels?[...el.labels].map(label=>text(label.innerText)).join(' '):'',Boolean(el.disabled)]);
       const actions = ['click', 'hover', 'press', 'read'];
+      if (table || overflow) actions.push('scroll');
       if (el.matches('input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),textarea,[contenteditable="true"]')) actions.push('fill');
       if (el.matches('select')) actions.push('select');
       if (el.matches('input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"]')) actions.push('check', 'uncheck');
@@ -61,6 +67,7 @@ function collectFrame({ snapshotId, offset, limit }) {
           checked: typeof el.checked === 'boolean' ? el.checked : undefined,
           value: sensitive ? '[redacted]' : typeof el.value === 'string' && type !== 'file' ? el.value.slice(0,300) : undefined,
           sensitive, visible: visible(el)||labelledControl, nativeVisible:visible(el), discovery: native ? 'semantic' : 'pointer_hint', actions,
+          ...(table || overflow ? { scroll: { top:el.scrollTop, left:el.scrollLeft, height:el.scrollHeight, width:el.scrollWidth, clientHeight:el.clientHeight, clientWidth:el.clientWidth } } : {}),
           options: el.matches('select') ? [...el.options].slice(0,200).map(option => ({ label: text(option.text), value: option.value, disabled: option.disabled })) : undefined } });
       if (nodes.length >= limit) { capped = true; break; }
     }
@@ -101,6 +108,27 @@ export class UiController {
   }
   invalidate() { this.latest = null; this.targets.clear(); }
   tabs() { return [...this.pages].filter(([,page]) => !page.isClosed()).map(([id,page]) => ({ id, active: id === this.active, url: safeUrl(page.url()) })); }
+  async tables(rowLimit = 5000) {
+    const page = this.page;
+      const frames = [];
+      for (const [index, frame] of page.frames().entries()) {
+        const data = await frame.evaluate(rowLimit => {
+          const visible = el => [...el.getClientRects()].some(r => r.width > 0 && r.height > 0) && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+          const tables = [...document.querySelectorAll('table,[role="grid"]')].filter(visible).map((table, tableIndex) => {
+            const rows = table.matches('table') ? [...table.rows] : [...table.querySelectorAll('[role="row"]')].filter(row=>row.closest('[role="grid"]')===table);
+            return { index:tableIndex, id:table.id, className:table.className, rowCount:rows.length, truncated:rows.length>rowLimit,
+              rows:rows.slice(0,rowLimit).map(row=>({ index:row.rowIndex ?? null, ariaRowIndex:row.getAttribute('aria-rowindex'), visible:visible(row),
+                cells:[...(row.cells ?? row.querySelectorAll('[role="columnheader"],[role="rowheader"],[role="gridcell"]'))].map(cell=>({
+                  text:cell.innerText ?? cell.textContent ?? '', tag:cell.tagName.toLowerCase(), rowSpan:cell.rowSpan ?? 1, colSpan:cell.colSpan ?? 1,
+                  ariaColIndex:cell.getAttribute('aria-colindex'), visible:visible(cell)
+                })) })) };
+          });
+          return {tables};
+        }, rowLimit);
+        frames.push({id:`f${index}`,url:safeUrl(frame.url()),...data});
+      }
+      return {tab:this.active,url:safeUrl(page.url()),capturedAt:new Date().toISOString(),frames,coverage:'loaded_dom_tables_only'};
+  }
   async snapshot(limit = 1200) {
     const page = this.page;
     const snapshotId = `s-${randomUUID()}`;
@@ -145,6 +173,7 @@ export class UiController {
     const timeout = options.actionTimeout ?? 30000;
     const limit = Math.min(Number(params.limit ?? 1200),5000);
     if (action === 'snapshot') return this.snapshot(limit);
+    if (action === 'tables') return this.tables(Number(params.limit ?? 5000));
     if (action === 'tabs') return { tabs: this.tabs() };
     if(action==='tab'){
       if(!this.pages.has(params.tab))throw new UiError('unknown_tab','未找到指定专用标签页');
@@ -168,7 +197,7 @@ export class UiController {
     let element, second, result;
     const sensitive=this.targets.get(params.ref)?.sensitive;
     try {
-      if (['click','fill','select','check','uncheck','hover','press','drag','upload','download'].includes(action)) element = await this.target(params.snapshotId,params.ref);
+      if (['click','fill','select','check','uncheck','hover','press','drag','upload','download'].includes(action) || (action === 'scroll' && params.ref)) element = await this.target(params.snapshotId,params.ref);
       const descriptor = element ? await element.evaluate(el => ({ name: el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText?.slice(0,120) || el.id, tag: el.tagName.toLowerCase() })) : {};
       if (action === 'open') await page.goto(assertNintUrl(params.url), { waitUntil: 'domcontentloaded', timeout });
       else if (action === 'back') await page.goBack({ waitUntil: 'domcontentloaded', timeout });
@@ -214,7 +243,9 @@ export class UiController {
         if (!params.key) throw new UiError('missing_key','press 需要 --key');
         await element.press(params.key,{timeout});
       } else if (action === 'scroll') {
-        await page.evaluate(({x,y})=>window.scrollBy(x,y),{x:Number(params.x??0),y:Number(params.y??600)});
+        const delta={x:Number(params.x??0),y:Number(params.y??600)};
+        if(element) await element.evaluate((el,{x,y})=>el.scrollBy(x,y),delta);
+        else await page.evaluate(({x,y})=>window.scrollBy(x,y),delta);
       } else if (action === 'wait') {
         if (!params.text) throw new UiError('missing_text','wait 需要 --text');
         await page.getByText(params.text,{exact:false}).first().waitFor({state:params.state??'visible',timeout});
@@ -230,8 +261,13 @@ export class UiController {
         if (!params.files?.length) throw new UiError('missing_file','upload 需要 --file');
         await element.setInputFiles(params.files,{timeout});
       } else if (action === 'download') {
-        const pending=page.waitForEvent('download',{timeout:options.downloadTimeout??timeout});
-        const [download]=await Promise.all([pending,element.click({timeout})]);
+        const waiting=waitForDownload(page,options.downloadTimeout??timeout);
+        let download;
+        try {
+          // A file response can arrive after the ordinary navigation timeout.
+          // The download event and saveAs below own completion for this action.
+          [download]=await Promise.all([waiting.promise,element.click({timeout,noWaitAfter:true})]);
+        } finally { waiting.dispose(); }
         const extension=path.extname(download.suggestedFilename()).replace(/[^.a-zA-Z0-9]/g,'').slice(0,12) || '.bin';
         const filename=await artifactPath(options.output,'download',extension);
         const temporary=`${filename}.part`;
@@ -246,6 +282,37 @@ export class UiController {
     } catch(error){this.invalidate();if(sensitive&&action==='fill')throw new UiError('sensitive_action_failed','敏感输入操作失败，请在专用窗口检查输入框');throw error;}
     finally { await element?.dispose(); await second?.dispose(); }
   }
+}
+
+function waitForDownload(page,timeout) {
+  let timer,resolve,reject;
+  const promise=new Promise((done,fail)=>{resolve=done;reject=fail;});
+  const onDownload=download=>resolve(download);
+  const onClose=()=>reject(new UiError('download_page_closed','下载前页面已关闭'));
+  const onResponse=response=>{
+    const request=response.request();
+    if(request.isNavigationRequest()&&request.frame()===page.mainFrame()&&response.status()>=400)
+      reject(new UiError('download_page_error',`下载跳转返回 HTTP ${response.status()}`));
+  };
+  const onDocument=async()=>{
+    try {
+      const text=(await page.locator('body').innerText({timeout:2000})).trim();
+      const error=text.match(/^(server\d*\s+error|(?:502|503|504)\s+(?:bad gateway|service unavailable|gateway time-?out))\b/i);
+      if(error)reject(new UiError('download_page_error',`下载被平台错误页替代：${error[1]}`));
+    } catch { /* A navigation may replace the document again. */ }
+  };
+  page.on('download',onDownload);
+  page.on('close',onClose);
+  page.on('response',onResponse);
+  page.on('domcontentloaded',onDocument);
+  timer=setTimeout(()=>reject(new UiError('download_timeout',`等待浏览器下载超过 ${timeout}ms`)),timeout);
+  return {promise,dispose(){
+    clearTimeout(timer);
+    page.off('download',onDownload);
+    page.off('close',onClose);
+    page.off('response',onResponse);
+    page.off('domcontentloaded',onDocument);
+  }};
 }
 
 async function artifactPath(directory,prefix,extension) {

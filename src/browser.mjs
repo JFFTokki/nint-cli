@@ -43,7 +43,8 @@ export async function launchBrowser(options, launcher = chromium.launchPersisten
   await mkdir(profile, { recursive: true, mode: 0o700 });
   let context;
   try {
-    context = await launcher(profile, { channel: 'chrome', headless: false, acceptDownloads: true,
+    const executable = options.browserExecutable ? { executablePath: options.browserExecutable } : { channel: 'chrome' };
+    context = await launcher(profile, { ...executable, headless: false, acceptDownloads: true,
       locale: 'zh-CN', timezoneId: 'Asia/Shanghai', viewport: null,
       args: ['--no-first-run', '--no-default-browser-check'], serviceWorkers: 'block' });
     await context.route('**/*', async route => {
@@ -56,6 +57,6 @@ export async function launchBrowser(options, launcher = chromium.launchPersisten
     return { context, page };
   } catch (error) {
     await context?.close().catch(() => {});
-    throw new Error(`专用 Chrome 启动失败。请确认已安装 Google Chrome，并关闭使用同一 data/browser-profile 的CLI。${error.message}`);
+    throw new Error(`专用 Chrome 启动失败。请确认已安装 Google Chrome 或 browserExecutable 指向有效的专用 Chrome，并关闭使用同一 data/browser-profile 的CLI。${error.message}`);
   }
 }

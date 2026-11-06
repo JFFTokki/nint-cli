@@ -6,13 +6,13 @@ import { assertNavigation } from './browser.mjs';
 export class UsageError extends Error {}
 const optionNames = {
   config: 'string', output: 'string', 'data-dir': 'string', 'start-url': 'string',
-  'action-timeout': 'string', 'download-timeout': 'string',
+  'action-timeout': 'string', 'download-timeout': 'string', 'browser-executable': 'string',
   json: 'boolean', help: 'boolean', version: 'boolean',
   snapshot: 'string', ref: 'string', target: 'string', value: 'string', key: 'string', url: 'string',
   text: 'string', state: 'string', tab: 'string', x: 'string', y: 'string', file: 'string', label: 'string', limit: 'string',
 };
-export const UI_ACTIONS = ['snapshot','read','open','click','fill','select','check','uncheck','hover','press','scroll','drag','upload','download','screenshot','tabs','tab','close-tab','back','forward','reload','wait'];
-const fields = ['output','dataDir','startUrl','actionTimeout','downloadTimeout'];
+export const UI_ACTIONS = ['snapshot','read','tables','open','click','fill','select','check','uncheck','hover','press','scroll','drag','upload','download','screenshot','tabs','tab','close-tab','back','forward','reload','wait'];
+const fields = ['output','dataDir','startUrl','actionTimeout','downloadTimeout','browserExecutable'];
 const camel = key => key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 
 export async function loadOptions(argv, cwd = process.cwd()) {
@@ -42,7 +42,7 @@ export async function loadOptions(argv, cwd = process.cwd()) {
     // Local notes stay in the config file and never enter command or daemon options.
     const configured = Object.fromEntries(fields.filter(key => config[key] !== undefined).map(key => [key,config[key]]));
     const options = {output:path.join(cwd,'output'),dataDir:path.join(cwd,'data'),startUrl:'https://art.nint.com/',actionTimeout:60000,downloadTimeout:60000,...configured};
-    for (const key of ['output','dataDir']) {
+    for (const key of ['output','dataDir','browserExecutable']) {
       if (config[key] !== undefined) {
         if (typeof config[key] !== 'string' || !config[key].trim()) throw new Error(`${key} 必须是非空路径`);
         options[key] = path.resolve(path.dirname(configPath),config[key]);
@@ -53,6 +53,10 @@ export async function loadOptions(argv, cwd = process.cwd()) {
     for (const key of ['output','dataDir']) {
       if (typeof options[key] !== 'string' || !options[key].trim()) throw new Error(`${key} 必须是非空路径`);
       options[key] = path.resolve(cwd,options[key]);
+    }
+    if (options.browserExecutable !== undefined) {
+      if (typeof options.browserExecutable !== 'string' || !options.browserExecutable.trim()) throw new Error('browserExecutable 必须是非空路径');
+      options.browserExecutable = path.resolve(cwd, options.browserExecutable);
     }
     assertNavigation(options.startUrl);
     if (options.startUrl === 'about:blank') throw new Error('startUrl 必须是情报通网页地址');

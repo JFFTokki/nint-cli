@@ -11,7 +11,7 @@ const help = `情报通 CLI
   init                         创建本地 nint.config.json，不覆盖已有文件
   login                        打开常驻专用 Chrome，在窗口中手动登录
   session start|status|stop     启动、查看、停止专用浏览器常驻会话
-  ui snapshot|read|tabs         查看当前页面、文字或专用标签页
+  ui snapshot|read|tables|tabs   查看页面、文字、已加载表格或专用标签页
   ui open --url URL            打开情报通页面
   ui click|fill|select|check|uncheck|hover|press|drag|upload|download
   ui scroll|wait|back|forward|reload|screenshot|tab|close-tab
@@ -21,6 +21,7 @@ const help = `情报通 CLI
   --config FILE                本地配置，默认 nint.config.json
   --output DIR --data-dir DIR   输出目录与专用浏览器数据目录
   --start-url URL              启动页面，限 nint.com 及其子域
+  --browser-executable FILE    指定专用 Chrome 可执行文件
   --action-timeout MS           UI 等待时间，默认 60000
   --download-timeout MS         浏览器下载等待时间，默认 60000
   --snapshot ID --ref ID        使用最新快照与元素引用操作
@@ -46,6 +47,7 @@ export async function main(argv) {
     if (options.command === 'init') {
       const relative = filename => path.relative(path.dirname(options.configPath),filename).split(path.sep).join('/') || '.';
       const config = {output:relative(options.output),dataDir:relative(options.dataDir),startUrl:options.startUrl,actionTimeout:options.actionTimeout,downloadTimeout:options.downloadTimeout,local:{}};
+      if (options.browserExecutable !== undefined) config.browserExecutable = relative(options.browserExecutable);
       await writeFile(options.configPath,`${JSON.stringify(config,null,2)}\n`,{flag:'wx',mode:0o600});
       console.log(options.json ? JSON.stringify({configPath:options.configPath}) : `已创建 ${options.configPath}`);
       return 0;

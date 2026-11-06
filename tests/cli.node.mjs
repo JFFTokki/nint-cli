@@ -11,7 +11,7 @@ const exec=promisify(execFile),bin=fileURLToPath(new URL('../bin/nint.mjs',impor
 test('真实 CLI 进程：版本、帮助、本地配置、不覆盖已有文件、错误退出码和离线状态',async()=>{
   const temp=await mkdtemp(path.join(tmpdir(),'nint-cli-test-'));
   try{
-    assert.equal((await exec(process.execPath,[bin,'--version'],{cwd:temp})).stdout.trim(),'0.3.0');
+    assert.equal((await exec(process.execPath,[bin,'--version'],{cwd:temp})).stdout.trim(),'0.4.0');
     assert.match((await exec(process.execPath,[bin,'--help'],{cwd:temp})).stdout,/用法/);assert.deepEqual(await readdir(temp),[]);
     await exec(process.execPath,[bin,'init','--config','custom.json','--output','./artifacts'],{cwd:temp});
     const original=await readFile(path.join(temp,'custom.json'),'utf8'),config=JSON.parse(original);
@@ -24,5 +24,9 @@ test('真实 CLI 进程：版本、帮助、本地配置、不覆盖已有文件
     const status=await exec(process.execPath,[bin,'session','status','--json'],{cwd:temp});assert.equal(JSON.parse(status.stdout).running,false);
     await assert.rejects(exec(process.execPath,[bin,'ui','snapshot','--json'],{cwd:temp}),e=>e.code===1);
     assert.deepEqual(await readdir(temp),['custom.json']);
+    await exec(process.execPath,[bin,'init','--config','browser.json','--browser-executable','./dedicated-chrome'],{cwd:temp});
+    const browserConfig=JSON.parse(await readFile(path.join(temp,'browser.json'),'utf8'));
+    assert.equal(path.resolve(temp,browserConfig.browserExecutable),path.join(temp,'dedicated-chrome'));
+    assert.deepEqual(browserConfig.local,{});
   }finally{await rm(temp,{recursive:true,force:true});}
 });

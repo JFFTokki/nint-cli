@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { loadOptions } from '../src/config.mjs';
-import { acquireLock, assertNavigation } from '../src/browser.mjs';
+import { acquireLock, assertNavigation, launchBrowser } from '../src/browser.mjs';
 import { reportInventory } from '../src/inventory.mjs';
 import { sessionOptions } from '../src/session.mjs';
 
@@ -30,6 +30,32 @@ test('专用目录锁保持所有权，页面导航限制在情报通域名',asy
     const again=await acquireLock(temp);await again();
     for(const url of ['https://outside.example/','https://nint.com.outside.example/','file:///tmp/fixture','https://user:pass@art.nint.com/'])assert.throws(()=>assertNavigation(url));
     assert.doesNotThrow(()=>assertNavigation('https://art.nint.com/'));assert.doesNotThrow(()=>assertNavigation('about:blank'));
+  }finally{await rm(temp,{recursive:true,force:true});}
+});
+
+test('独立浏览器路径贯穿配置与服务，始终保留专用资料目录',async()=>{
+  const temp=await mkdtemp(path.join(tmpdir(),'nint-browser-test-'));
+  try{
+    const configDir=path.join(temp,'config');await mkdir(configDir);
+    const configFile=path.join(configDir,'custom.json');
+    await writeFile(configFile,JSON.stringify({dataDir:'./dedicated',browserExecutable:'./Chrome for Testing'}));
+    const options=await loadOptions(['session','start','--config',configFile],temp);
+    assert.equal(options.browserExecutable,path.join(configDir,'Chrome for Testing'));
+    assert.equal(sessionOptions(options).browserExecutable,options.browserExecutable);
+    const override=await loadOptions(['session','start','--config',configFile,'--browser-executable','./override'],temp);
+    assert.equal(override.browserExecutable,path.join(temp,'override'));
+    const page={setDefaultTimeout(){},setDefaultNavigationTimeout(){}};
+    const context={async route(){},async newPage(){return page;}};
+    let launched;
+    await launchBrowser(options,async(profile,settings)=>{launched={profile,settings};return context;});
+    assert.equal(launched.profile,path.join(configDir,'dedicated','browser-profile'));
+    assert.equal(launched.settings.executablePath,options.browserExecutable);
+    assert.equal(launched.settings.channel,undefined);
+    const standard={...options};delete standard.browserExecutable;
+    await launchBrowser(standard,async(profile,settings)=>{launched={profile,settings};return context;});
+    assert.equal(launched.settings.channel,'chrome');assert.equal(launched.settings.executablePath,undefined);
+    await writeFile(configFile,JSON.stringify({browserExecutable:''}));
+    await assert.rejects(loadOptions(['session','start','--config',configFile],temp),/非空路径/);
   }finally{await rm(temp,{recursive:true,force:true});}
 });
 

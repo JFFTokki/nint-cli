@@ -1,6 +1,6 @@
 {
   "name": "nint-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "情报通通用浏览器 CLI：常驻会话、页面快照、元素操作与页面盘点",
   "type": "module",
   "engines": {
