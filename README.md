@@ -107,7 +107,7 @@ nint inventory report --output ./output
 | `downloadTimeout` | 浏览器下载等待时间，默认 60000 毫秒 |
 | `local` | 个人本地备注，默认空对象；不进入运行选项、服务请求或网页操作 |
 
-个人类目和命名偏好可记录在本机配置的 `local` 中，程序不据此生成或执行任务。仓库不提供固定类目、日期、指标或归档默认值。
+个人类目和命名偏好可记录在本机配置的 `local` 中，程序不据此生成或执行任务。CLI 核心不提供固定类目、日期、指标或归档默认值；可选业务流程见下方 skill。
 
 配置文件中的相对路径相对配置文件，命令行路径相对当前工作目录。使用其他终端目录时，传入同一个配置文件的绝对路径：
 
@@ -129,3 +129,22 @@ npm test
 退出码：`0` 成功，`1` 运行错误，`2` 参数或配置错误，`130` 用户中断。升级前先用旧版本执行 `nint session stop`，再安装并启动新服务。
 
 已有安装更新时，在工作目录先运行 `nint session stop`，然后在源码目录执行 `git pull --ff-only`、`npm ci`、`npm install -g .`。最后返回原工作目录重新启动服务；用 `nint --version` 核对版本。通过 ZIP 安装时，重新下载并解压源码后执行相同安装命令。
+
+## 可选 Skill：每月童装店铺数据留存
+
+[情报通每月童装热销店铺TOP100数据留存](skills/nint-shop-download/SKILL.md) 与 CLI 放在同一仓库，独立于 CLI 核心。支持指定月份童装天猫销量 TOP100 榜单，以及逐店下载带图商品表、文件核验和断点续跑。
+
+默认清单包含 165 家店铺，每轮先确认沿用默认名单还是新增店铺；默认名单不等于当月实时 TOP100。逐店下载严格串行，上一家文件落盘并核验后才开始下一家，动作之间随机等待 2—5 秒。
+
+在 Codex 中可使用 `$skill-installer` 安装本仓库的 `skills/nint-shop-download`，也可从仓库根目录复制（目标目录不存在时）：
+
+```sh
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/nint-shop-download "${CODEX_HOME:-$HOME/.codex}/skills/"
+```
+
+已有同名 skill 时先比较本地修改，避免覆盖自定义名单。重新启动 Codex 后，使用 `$nint-shop-download` 调用。配置路径和依赖见 [运行环境](skills/nint-shop-download/references/setup.md)。CLI 安装不会自动安装 skill，npm 包也不包含它。
+
+示例：`使用 $nint-shop-download 下载 2026 年 10 月童装天猫销量前100榜单，再逐家下载带图商品表。`
+
+商品表保存平台实际统计期间，不能据月榜月份推定商品数据期间；每店带图导出最多 3000 条。仓库只提供流程、校验脚本和默认名称清单，不包含登录资料或下载的商品表。

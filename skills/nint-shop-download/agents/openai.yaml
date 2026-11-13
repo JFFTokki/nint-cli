@@ -1,0 +1,4 @@
+interface:
+  display_name: "情报通每月童装热销店铺TOP100数据留存"
+  short_description: "确认默认165家或新增名单后逐店下载，也支持童装月榜"
+  default_prompt: "使用 $nint-shop-download 先询问按默认165家名单抓取还是新增店铺，确认后逐店下载并核验带图商品表；需要月榜时再抓取指定月份童装天猫销量前100。"

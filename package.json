@@ -20,7 +20,7 @@
     "npm-shrinkwrap.json"
   ],
   "scripts": {
-    "test": "node --test tests/core.node.mjs tests/cli.node.mjs tests/session.node.mjs"
+    "test": "node --test tests/core.node.mjs tests/cli.node.mjs tests/session.node.mjs tests/skill-runtime.node.mjs"
   },
   "dependencies": {
     "playwright": "1.63.0"
